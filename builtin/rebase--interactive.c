@@ -185,7 +185,8 @@ int cmd_rebase__interactive(int argc, const char **argv, const char *prefix)
 	char *raw_strategies = NULL;
 	enum {
 		NONE = 0, CONTINUE, SKIP, EDIT_TODO, SHOW_CURRENT_PATCH,
-		SHORTEN_OIDS, EXPAND_OIDS, CHECK_TODO_LIST, REARRANGE_SQUASH, ADD_EXEC
+		SHORTEN_OIDS, EXPAND_OIDS, CHECK_TODO_LIST, REARRANGE_SQUASH, ADD_EXEC,
+		MAKE_SCRIPT, SKIP_UNNECESSARY_PICKS,
 	} command = 0;
 	struct option options[] = {
 		OPT_BOOL(0, "ff", &opts.allow_ff, N_("allow fast-forward")),
@@ -238,6 +239,10 @@ int cmd_rebase__interactive(int argc, const char **argv, const char *prefix)
 		OPT_RERERE_AUTOUPDATE(&opts.allow_rerere_auto),
 		OPT_BOOL(0, "reschedule-failed-exec", &opts.reschedule_failed_exec,
 			 N_("automatically re-schedule any `exec` that fails")),
+		OPT_CMDMODE(0, "make-script", &command,
+			N_("make rebase script"), MAKE_SCRIPT),
+		OPT_CMDMODE(0, "skip-unnecessary-picks", &command,
+			N_("skip unnecessary picks"), SKIP_UNNECESSARY_PICKS),
 		OPT_END()
 	};
 
@@ -315,6 +320,35 @@ int cmd_rebase__interactive(int argc, const char **argv, const char *prefix)
 	case ADD_EXEC:
 		ret = sequencer_add_exec_commands(the_repository, &commands);
 		break;
+	case MAKE_SCRIPT: {
+		struct strbuf buf = STRBUF_INIT;
+		ret = sequencer_make_script(the_repository, &buf, argc, argv, flags);
+		if (!ret)
+			ret = write_in_full(1, buf.buf, buf.len);
+		strbuf_release(&buf);
+		break;
+	}
+	case SKIP_UNNECESSARY_PICKS: {
+		struct object_id oid;
+		const char *todo_file = rebase_path_todo();
+		struct todo_list todo_list = TODO_LIST_INIT;
+
+		if (strbuf_read_file(&todo_list.buf, todo_file, 0) < 0)
+			ret = error_errno(_("could not read '%s'."), todo_file);
+
+		if (!ret && todo_list_parse_insn_buffer(the_repository, todo_list.buf.buf, &todo_list))
+			ret = error(_("unusable todo list: '%s'"), todo_file);
+
+		ret = skip_unnecessary_picks(the_repository, &todo_list, &oid);
+
+		if (!ret)
+			ret = todo_list_write_to_file(the_repository, &todo_list, todo_file, NULL, NULL, -1, 0);
+		todo_list_release(&todo_list);
+
+		if (!ret)
+			printf("%s\n", oid_to_hex(&oid));
+		break;
+	}
 	default:
 		BUG("invalid command '%d'", command);
 	}
