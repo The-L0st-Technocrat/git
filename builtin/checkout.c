@@ -414,7 +414,7 @@ static int checkout_paths(const struct checkout_opts *opts,
 	state.istate = &the_index;
 
 	enable_delayed_checkout(&state);
-	enable_fscache(1);
+	enable_fscache(active_nr);
 	for (pos = 0; pos < active_nr; pos++) {
 		struct cache_entry *ce = active_cache[pos];
 		if (ce->ce_flags & CE_MATCHED) {
@@ -436,7 +436,7 @@ static int checkout_paths(const struct checkout_opts *opts,
 	}
 	remove_marked_cache_entries(&the_index, 1);
 	remove_scheduled_dirs();
-	enable_fscache(0);
+	disable_fscache();
 	errs |= finish_delayed_checkout(&state, &nr_checkouts);
 
 	if (opts->count_checkout_paths) {
